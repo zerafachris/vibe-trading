@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from typing import Mapping, Optional
@@ -202,3 +203,26 @@ def provider_env_names(provider: str | None, model: str | None = None) -> tuple[
     """Return the API-key and base-URL env names for a provider/model pair."""
     caps = get_provider_capabilities(provider, model)
     return caps.api_key_env, caps.base_url_env
+
+
+def get_llm_credentials(
+    provider: str | None,
+    model: str | None = None,
+) -> dict[str, str]:
+    """Resolve API key and base URL for a provider/model pair.
+
+    Returns a dict with ``api_key`` and ``base_url`` resolved from
+    provider-specific environment variables, falling back to
+    ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` / ``OPENAI_API_BASE``.
+    Keyless local providers (e.g. Ollama) get a placeholder key.
+    """
+    key_env, base_env = provider_env_names(provider, model)
+
+    if key_env is not None:
+        api_key = os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate — dynamic provider key resolution
+    else:
+        api_key = os.getenv("OPENAI_API_KEY", "") or "ollama"  # noqa: env-gate — keyless local provider fallback
+
+    base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate — dynamic provider URL resolution
+
+    return {"api_key": api_key, "base_url": base_url}

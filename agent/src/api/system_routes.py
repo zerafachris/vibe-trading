@@ -121,7 +121,7 @@ def _provider_readiness() -> Tuple[bool, str]:
     """
     try:
         from src.config.accessor import get_env_config
-        from src.providers.capabilities import provider_env_names
+        from src.providers.capabilities import get_llm_credentials
         from src.providers.llm import _sync_provider_env
     except Exception as exc:  # noqa: BLE001 — degrade to not-ready, never crash the probe
         logger.warning("readiness: provider config import failed: %r", exc)
@@ -148,12 +148,9 @@ def _provider_readiness() -> Tuple[bool, str]:
         return True, "ready"
 
     _sync_provider_env()
-    key_env, _base_env = provider_env_names(provider, model)
-    # key_env is None for keyless local providers (e.g. Ollama).
-    if key_env is not None:
-        has_key = bool(os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", ""))  # noqa: env-gate — readiness credential probe
-        if not has_key:
-            return False, "LLM provider credential not configured"
+    creds = get_llm_credentials(provider, model)
+    if not creds["api_key"]:
+        return False, "LLM provider credential not configured"
     return True, "ready"
 
 

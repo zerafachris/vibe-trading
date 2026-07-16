@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import PrivateAttr
 
 from src.config.accessor import get_env_config, reset_env_config
-from src.providers.capabilities import get_provider_capabilities, provider_env_names
+from src.providers.capabilities import get_llm_credentials, get_provider_capabilities, provider_env_names
 
 try:
     from dotenv import load_dotenv
@@ -401,17 +401,15 @@ def _build_native_deepseek(
         logger.info("DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc)
         return None
 
-    key_env, base_env = provider_env_names("deepseek", model)
-    api_key = os.getenv(key_env or "", "") or os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate — dynamic provider key resolution
-    base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate — dynamic provider URL resolution
+    creds = get_llm_credentials("deepseek", model)
     return chat_deepseek(
         model=model,
         temperature=temperature,
         timeout=get_env_config().llm.timeout_seconds,
         max_retries=get_env_config().llm.max_retries,
         callbacks=callbacks,
-        api_key=api_key or None,
-        base_url=base_url or None,
+        api_key=creds["api_key"] or None,
+        base_url=creds["base_url"] or None,
     )
 
 
@@ -485,16 +483,10 @@ def _sync_provider_env() -> None:
         os.environ.pop("OPENAI_API_KEY", None)
         return
 
-    key_env, base_env = provider_env_names(provider, get_env_config().llm.langchain_model_name)
+    creds = get_llm_credentials(provider, get_env_config().llm.langchain_model_name)
+    api_key = creds["api_key"]
+    base_url = creds["base_url"]
 
-    # Resolve API key: provider-specific env → OPENAI_API_KEY fallback
-    if key_env is not None:
-        api_key = os.getenv(key_env, "") or os.getenv("OPENAI_API_KEY", "")  # noqa: env-gate — dynamic provider key fallback
-    else:
-        api_key = os.getenv("OPENAI_API_KEY", "") or "ollama"  # noqa: env-gate — ollama default key
-
-    # Resolve base URL: provider-specific env → OPENAI_BASE_URL fallback
-    base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate — dynamic provider URL chain
     if provider == "ollama" and base_url:
         base_url = _normalize_ollama_base_url(base_url)
 
@@ -516,8 +508,9 @@ def provider_diagnostics() -> dict[str, Any]:
     provider = get_env_config().llm.langchain_provider.strip().lower()
     model = get_env_config().llm.langchain_model_name.strip()
     caps = get_provider_capabilities(provider, model)
-    key_env, base_env = provider_env_names(provider, model)
-    base_url = os.getenv(base_env, "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate — dynamic provider URL resolution
+    key_env, _base_env = provider_env_names(provider, model)
+    creds = get_llm_credentials(provider, model)
+    base_url = creds["base_url"]
     proxy_names = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]
     package_names = ["langchain-openai", "langchain-core", "langchain", "openai", "langchain-deepseek"]
     native_package_version = (
